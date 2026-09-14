@@ -20,11 +20,29 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+        // Native libs are tiny; keep arm64 for real devices (minSdk 33).
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            // Debug keystore so APK is installable without a release key.
+            signingConfig = signingConfigs.getByName("debug")
+        }
+        // Optional: minify debug build (same debug signing by default).
+        create("minifyDebug") {
+            initWith(getByName("debug"))
+            isMinifyEnabled = true
+            isShrinkResources = true
+            matchingFallbacks += listOf("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

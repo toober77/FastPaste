@@ -1,15 +1,47 @@
+# Built application files
+*.apk
+*.ap_
+*.aab
+*.dex
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+build/
+**/build/
+
+# Gradle
+.gradle/
+gradle-app.setting
+!gradle-wrapper.jar
+
+# Local config / secrets
+local.properties
+*.jks
+*.keystore
+!debug.keystore
+
+# IDE
 *.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
+.idea/
+.vscode/
+*.swp
+*~
+
+# Kotlin / tooling caches
+.kotlin/
 .externalNativeBuild
 .cxx
-local.properties
+.navigation/
+captures/
+.DS_Store
+
+# Logs / crash dumps / local scratch
+*.log
+*.hprof
+NOTES.md
+
+# OS
+Thumbs.db
