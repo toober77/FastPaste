@@ -17,6 +17,25 @@
     <string name="copied">已複製</string>
     <string name="deleted_count">已刪除 %1$d 項</string>
     <string name="undo">復原</string>
+    <string name="filter_favorites">收藏</string>
+    <string name="no_favorites_title">尚無收藏項目</string>
+    <string name="no_favorites_subtitle">點項目上的星號即可加入收藏</string>
+    <string name="pin_selected">置頂所選項目</string>
+    <string name="unpin_selected">取消置頂所選項目</string>
+    <string name="favorite_selected">收藏所選項目</string>
+    <string name="unfavorite_selected">取消收藏所選項目</string>
+    <string name="more_options">更多選項</string>
+
+    <!-- Backup -->
+    <string name="export_backup">匯出備份</string>
+    <string name="import_backup">匯入備份</string>
+    <string name="export_done">已匯出 %1$d 筆</string>
+    <string name="import_done">已匯入 %1$d 筆，略過 %2$d 筆重複</string>
+    <string name="backup_error_read">無法讀取檔案</string>
+    <string name="backup_error_write">無法寫入檔案</string>
+    <string name="backup_error_invalid">檔案格式錯誤或已損毀</string>
+    <string name="backup_error_version">備份檔版本較新，請先更新 App</string>
+    <string name="backup_error_too_large">檔案過大，無法匯入</string>
 
     <!-- Card accessibility -->
     <string name="action_copy">複製</string>
@@ -24,9 +43,19 @@
     <string name="action_deselect">取消選取</string>
     <string name="state_selected">已選取</string>
     <string name="state_not_selected">未選取</string>
+    <string name="state_pinned">已置頂</string>
+    <string name="more_actions">更多動作</string>
+    <string name="action_edit">編輯</string>
+    <string name="action_pin">置頂</string>
+    <string name="action_unpin">取消置頂</string>
+    <string name="action_favorite">加入收藏</string>
+    <string name="action_unfavorite">取消收藏</string>
+    <string name="action_delete">刪除</string>
 
     <!-- Add sheet -->
     <string name="add_sheet_title">新增項目</string>
+    <string name="edit_sheet_title">編輯項目</string>
+    <string name="save">儲存</string>
     <string name="field_content">內容</string>
     <string name="field_content_placeholder">要快速貼上的文字</string>
     <string name="field_label">標籤（選填）</string>
@@ -43,4 +72,5 @@
     <!-- Widget -->
     <string name="widget_empty">尚無項目，開啟 App 新增</string>
     <string name="widget_copied">已從小工具複製</string>
+    <string name="widget_pinned_prefix">📌 %1$s</string>
 </resources>

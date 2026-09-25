@@ -15,6 +15,9 @@ class PasteItemTest {
         assertEquals("hello", item.content)
         assertEquals("", item.label)
         assertTrue(item.createdAt > 0L)
+        assertEquals(item.createdAt, item.updatedAt)
+        assertFalse(item.pinned)
+        assertFalse(item.favorite)
     }
 
     @Test

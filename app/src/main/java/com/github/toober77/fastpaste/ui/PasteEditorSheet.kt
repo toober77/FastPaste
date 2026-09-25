@@ -29,20 +29,26 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.github.toober77.fastpaste.PasteItem
 import com.github.toober77.fastpaste.PasteLogic
 import com.github.toober77.fastpaste.R
 
+/**
+ * Bottom sheet used both to add a new snippet ([initial] == null) and to edit an existing one.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddPasteSheet(
+fun PasteEditorSheet(
+    initial: PasteItem?,
     onDismiss: () -> Unit,
-    onAdd: (content: String, label: String) -> Unit,
+    onSave: (content: String, label: String) -> Unit,
     isDuplicate: (String) -> Boolean = { false }
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var content by rememberSaveable { mutableStateOf("") }
-    var label by rememberSaveable { mutableStateOf("") }
+    var content by rememberSaveable { mutableStateOf(initial?.content.orEmpty()) }
+    var label by rememberSaveable { mutableStateOf(initial?.label.orEmpty()) }
     val focusRequester = remember { FocusRequester() }
+    val isEdit = initial != null
 
     val canSave = content.isNotBlank()
     // Hint only; saving a duplicate is still allowed.
@@ -63,7 +69,7 @@ fun AddPasteSheet(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                text = stringResource(R.string.add_sheet_title),
+                text = stringResource(if (isEdit) R.string.edit_sheet_title else R.string.add_sheet_title),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -114,7 +120,7 @@ fun AddPasteSheet(
                 Button(
                     onClick = {
                         if (canSave) {
-                            onAdd(
+                            onSave(
                                 PasteLogic.normalizeContent(content),
                                 PasteLogic.normalizeLabel(label)
                             )
@@ -122,7 +128,7 @@ fun AddPasteSheet(
                     },
                     enabled = canSave
                 ) {
-                    Text(stringResource(R.string.add_item))
+                    Text(stringResource(if (isEdit) R.string.save else R.string.add_item))
                 }
             }
         }

@@ -55,7 +55,11 @@ object PasteWidgetUpdater {
             .setViewTypeCount(1)
         for (item in items) {
             val row = RemoteViews(pkg, R.layout.widget_item).apply {
-                setTextViewText(R.id.widget_item_content, item.content.take(MAX_PREVIEW_CHARS))
+                val preview = item.content.take(MAX_PREVIEW_CHARS)
+                setTextViewText(
+                    R.id.widget_item_content,
+                    if (item.pinned) context.getString(R.string.widget_pinned_prefix, preview) else preview
+                )
                 if (item.label.isNotEmpty()) {
                     setTextViewText(R.id.widget_item_label, item.label)
                     setViewVisibility(R.id.widget_item_label, View.VISIBLE)

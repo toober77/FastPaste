@@ -5,6 +5,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 
 /** In-memory PasteDao mirroring the real queries' ordering, for fast JVM tests. */
+private val PINNED_FIRST = compareByDescending<PasteItem> { it.pinned }
+
 class FakePasteDao(initial: List<PasteItem> = emptyList()) : PasteDao {
     val state = MutableStateFlow(initial)
     private var nextId = (initial.maxOfOrNull { it.id } ?: 0) + 1
@@ -13,19 +15,33 @@ class FakePasteDao(initial: List<PasteItem> = emptyList()) : PasteDao {
 
     override fun getAllItemsSortedByTime(): Flow<List<PasteItem>> {
         timeQueries++
-        return state.map { list -> list.sortedByDescending { it.createdAt } }
+        return state.map { list -> list.sortedWith(PINNED_FIRST.thenByDescending { it.createdAt }) }
     }
 
     override fun getAllItemsSortedByAlpha(): Flow<List<PasteItem>> {
         alphaQueries++
-        return state.map { list -> list.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.content }) }
+        return state.map { list -> list.sortedWith(PINNED_FIRST.thenBy(String.CASE_INSENSITIVE_ORDER) { it.content }) }
     }
 
     override fun getRecentItems(limit: Int): Flow<List<PasteItem>> =
-        state.map { list -> list.sortedByDescending { it.createdAt }.take(limit) }
+        state.map { list -> list.sortedWith(PINNED_FIRST.thenByDescending { it.createdAt }).take(limit) }
 
     override suspend fun getRecentItemsOnce(limit: Int): List<PasteItem> =
-        state.value.sortedByDescending { it.createdAt }.take(limit)
+        state.value.sortedWith(PINNED_FIRST.thenByDescending { it.createdAt }).take(limit)
+
+    override suspend fun getAllOnce(): List<PasteItem> = state.value.sortedBy { it.createdAt }
+
+    override suspend fun update(item: PasteItem) {
+        state.value = state.value.map { if (it.id == item.id) item else it }
+    }
+
+    override suspend fun setPinned(ids: List<Int>, pinned: Boolean) {
+        state.value = state.value.map { if (it.id in ids) it.copy(pinned = pinned) else it }
+    }
+
+    override suspend fun setFavorite(ids: List<Int>, favorite: Boolean) {
+        state.value = state.value.map { if (it.id in ids) it.copy(favorite = favorite) else it }
+    }
 
     override suspend fun getById(id: Int): PasteItem? = state.value.firstOrNull { it.id == id }
 

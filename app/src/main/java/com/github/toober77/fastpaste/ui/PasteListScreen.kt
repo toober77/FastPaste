@@ -4,6 +4,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,7 +25,17 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.FileUpload
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.outlined.StarOutline
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -46,6 +58,8 @@ import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -61,6 +75,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.github.toober77.fastpaste.Backup
+import com.github.toober77.fastpaste.BackupError
 import com.github.toober77.fastpaste.PasteEvent
 import com.github.toober77.fastpaste.PasteViewModel
 import com.github.toober77.fastpaste.R
@@ -74,8 +90,13 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel(factory = PasteViewMod
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val sortOrder by viewModel.sortOrder.collectAsStateWithLifecycle()
     val selectedIds by viewModel.selectedIds.collectAsStateWithLifecycle()
+    val favoritesOnly by viewModel.favoritesOnly.collectAsStateWithLifecycle()
+    val selectionFlags by viewModel.selectionFlags.collectAsStateWithLifecycle()
 
-    var showAddSheet by rememberSaveable { mutableStateOf(false) }
+    // Editor: closed when false; editingId == NO_ID means "add new".
+    var editorOpen by rememberSaveable { mutableStateOf(false) }
+    var editingId by rememberSaveable { mutableIntStateOf(NO_ID) }
+    var showTopMenu by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val view = LocalView.current
@@ -86,6 +107,17 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel(factory = PasteViewMod
 
     val copiedMessage = stringResource(R.string.copied)
     val undoLabel = stringResource(R.string.undo)
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) viewModel.exportBackup { context.applicationContext.contentResolver.openOutputStream(uri, "wt") }
+    }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) viewModel.importBackup { context.applicationContext.contentResolver.openInputStream(uri) }
+    }
 
     // Back in selection mode clears the selection instead of leaving the app.
     BackHandler(enabled = selectionMode) { viewModel.clearSelection() }
@@ -108,6 +140,25 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel(factory = PasteViewMod
                         }
                     }
                 }
+                is PasteEvent.Exported -> launch {
+                    showMessage(snackbarHostState, context.getString(R.string.export_done, event.count))
+                }
+                is PasteEvent.Imported -> launch {
+                    showMessage(
+                        snackbarHostState,
+                        context.getString(R.string.import_done, event.added, event.skipped)
+                    )
+                }
+                is PasteEvent.BackupFailed -> launch {
+                    val res = when (event.error) {
+                        BackupError.READ -> R.string.backup_error_read
+                        BackupError.WRITE -> R.string.backup_error_write
+                        BackupError.INVALID -> R.string.backup_error_invalid
+                        BackupError.UNSUPPORTED_VERSION -> R.string.backup_error_version
+                        BackupError.TOO_LARGE -> R.string.backup_error_too_large
+                    }
+                    showMessage(snackbarHostState, context.getString(res))
+                }
             }
         }
     }
@@ -128,6 +179,23 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel(factory = PasteViewMod
                         }
                     },
                     actions = {
+                        IconButton(onClick = { viewModel.togglePinnedForSelection() }) {
+                            Icon(
+                                if (selectionFlags.allPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                                contentDescription = stringResource(
+                                    if (selectionFlags.allPinned) R.string.unpin_selected else R.string.pin_selected
+                                )
+                            )
+                        }
+                        IconButton(onClick = { viewModel.toggleFavoriteForSelection() }) {
+                            Icon(
+                                if (selectionFlags.allFavorite) Icons.Filled.Star else Icons.Outlined.StarOutline,
+                                contentDescription = stringResource(
+                                    if (selectionFlags.allFavorite) R.string.unfavorite_selected
+                                    else R.string.favorite_selected
+                                )
+                            )
+                        }
                         IconButton(onClick = { viewModel.deleteSelected() }) {
                             Icon(
                                 Icons.Default.Delete,
@@ -146,6 +214,40 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel(factory = PasteViewMod
                 LargeTopAppBar(
                     title = { Text(stringResource(R.string.app_name)) },
                     scrollBehavior = scrollBehavior,
+                    actions = {
+                        Box {
+                            IconButton(onClick = { showTopMenu = true }) {
+                                Icon(
+                                    Icons.Outlined.MoreVert,
+                                    contentDescription = stringResource(R.string.more_options)
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showTopMenu,
+                                onDismissRequest = { showTopMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.export_backup)) },
+                                    leadingIcon = { Icon(Icons.Outlined.FileUpload, contentDescription = null) },
+                                    onClick = {
+                                        showTopMenu = false
+                                        exportLauncher.launch(Backup.defaultFileName())
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.import_backup)) },
+                                    leadingIcon = { Icon(Icons.Outlined.FileDownload, contentDescription = null) },
+                                    onClick = {
+                                        showTopMenu = false
+                                        // Some file managers label .json as text or octet-stream.
+                                        importLauncher.launch(
+                                            arrayOf("application/json", "text/*", "application/octet-stream")
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    },
                     colors = TopAppBarDefaults.largeTopAppBarColors(
                         containerColor = MaterialTheme.colorScheme.surface,
                         scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer
@@ -156,7 +258,10 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel(factory = PasteViewMod
         floatingActionButton = {
             if (!selectionMode) {
                 FloatingActionButton(
-                    onClick = { showAddSheet = true },
+                    onClick = {
+                        editingId = NO_ID
+                        editorOpen = true
+                    },
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ) {
@@ -218,6 +323,18 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel(factory = PasteViewMod
                     onClick = { viewModel.setSortOrder(SortOrder.ALPHA) },
                     label = { Text(stringResource(R.string.sort_by_alpha)) }
                 )
+                FilterChip(
+                    selected = favoritesOnly,
+                    onClick = { viewModel.setFavoritesOnly(!favoritesOnly) },
+                    label = { Text(stringResource(R.string.filter_favorites)) },
+                    leadingIcon = {
+                        Icon(
+                            if (favoritesOnly) Icons.Filled.Star else Icons.Outlined.StarOutline,
+                            contentDescription = null,
+                            modifier = Modifier.size(FilterChipDefaults.IconSize)
+                        )
+                    }
+                )
             }
 
             val list = items
@@ -235,6 +352,20 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel(factory = PasteViewMod
                         },
                         title = stringResource(R.string.no_results_title),
                         subtitle = stringResource(R.string.no_results_subtitle)
+                    )
+                }
+                list.isEmpty() && favoritesOnly -> {
+                    EmptyState(
+                        icon = {
+                            Icon(
+                                Icons.Outlined.StarOutline,
+                                contentDescription = null,
+                                modifier = Modifier.size(56.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        title = stringResource(R.string.no_favorites_title),
+                        subtitle = stringResource(R.string.no_favorites_subtitle)
                     )
                 }
                 list.isEmpty() -> {
@@ -285,7 +416,14 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel(factory = PasteViewMod
                                 onLongClick = {
                                     view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                                     viewModel.select(item.id)
-                                }
+                                },
+                                onEdit = {
+                                    editingId = item.id
+                                    editorOpen = true
+                                },
+                                onTogglePin = { viewModel.togglePinned(item) },
+                                onToggleFavorite = { viewModel.toggleFavorite(item) },
+                                onDelete = { viewModel.deleteItem(item.id) }
                             )
                         }
                     }
@@ -294,16 +432,34 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel(factory = PasteViewMod
         }
     }
 
-    if (showAddSheet) {
-        AddPasteSheet(
-            onDismiss = { showAddSheet = false },
-            onAdd = { content, label ->
-                viewModel.addItem(content, label)
-                showAddSheet = false
-            },
-            isDuplicate = viewModel::isDuplicate
-        )
+    if (editorOpen) {
+        val editing = if (editingId == NO_ID) null else viewModel.findItem(editingId)
+        if (editingId != NO_ID && editing == null) {
+            // Item vanished (e.g. deleted); wait for the list to load after process death.
+            LaunchedEffect(items) { if (items != null) editorOpen = false }
+        } else {
+            // key: a different target gets a fresh sheet with fresh prefilled state.
+            key(editingId) {
+                PasteEditorSheet(
+                    initial = editing,
+                    onDismiss = { editorOpen = false },
+                    onSave = { content, label ->
+                        if (editing == null) viewModel.addItem(content, label)
+                        else viewModel.updateItem(editing.id, content, label)
+                        editorOpen = false
+                    },
+                    isDuplicate = { viewModel.isDuplicate(it, editing?.id) }
+                )
+            }
+        }
     }
+}
+
+private const val NO_ID = -1
+
+private suspend fun showMessage(host: SnackbarHostState, message: String) {
+    host.currentSnackbarData?.dismiss()
+    host.showSnackbar(message, withDismissAction = true)
 }
 
 @Composable

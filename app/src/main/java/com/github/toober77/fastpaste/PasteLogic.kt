@@ -5,11 +5,13 @@ object PasteLogic {
     const val MAX_CONTENT_LENGTH = 5000
     const val MAX_LABEL_LENGTH = 40
 
-    fun filter(items: List<PasteItem>, query: String): List<PasteItem> {
+    fun filter(items: List<PasteItem>, query: String, favoritesOnly: Boolean = false): List<PasteItem> {
         val q = query.trim()
-        if (q.isEmpty()) return items
+        if (q.isEmpty() && !favoritesOnly) return items
         return items.filter {
-            it.content.contains(q, ignoreCase = true) || it.label.contains(q, ignoreCase = true)
+            (!favoritesOnly || it.favorite) &&
+                (q.isEmpty() || it.content.contains(q, ignoreCase = true) ||
+                    it.label.contains(q, ignoreCase = true))
         }
     }
 

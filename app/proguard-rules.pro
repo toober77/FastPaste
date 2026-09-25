@@ -13,3 +13,15 @@
 -dontwarn org.bouncycastle.**
 -dontwarn org.conscrypt.**
 -dontwarn org.openjsse.**
+
+# kotlinx.serialization: the library ships consumer rules, but keep the backup model's
+# generated serializers explicitly so export/import survive R8 in release builds.
+-keepattributes RuntimeVisibleAnnotations,AnnotationDefault
+-keep,includedescriptorclasses class com.github.toober77.fastpaste.Backup*$$serializer { *; }
+-keepclassmembers class com.github.toober77.fastpaste.Backup* {
+    *** Companion;
+    kotlinx.serialization.KSerializer serializer(...);
+}
+-keepclasseswithmembers class com.github.toober77.fastpaste.Backup* {
+    kotlinx.serialization.KSerializer serializer(...);
+}
