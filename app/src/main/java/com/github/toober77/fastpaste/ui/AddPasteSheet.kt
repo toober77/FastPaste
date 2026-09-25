@@ -18,22 +18,37 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.github.toober77.fastpaste.PasteLogic
+import com.github.toober77.fastpaste.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddPasteSheet(
     onDismiss: () -> Unit,
-    onAdd: (content: String, label: String) -> Unit
+    onAdd: (content: String, label: String) -> Unit,
+    isDuplicate: (String) -> Boolean = { false }
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var content by remember { mutableStateOf("") }
-    var label by remember { mutableStateOf("") }
+    var content by rememberSaveable { mutableStateOf("") }
+    var label by rememberSaveable { mutableStateOf("") }
+    val focusRequester = remember { FocusRequester() }
+
+    val canSave = content.isNotBlank()
+    // Hint only; saving a duplicate is still allowed.
+    val duplicate = remember(content) { isDuplicate(content) }
+
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -48,25 +63,43 @@ fun AddPasteSheet(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                text = "新增項目",
+                text = stringResource(R.string.add_sheet_title),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface
             )
             OutlinedTextField(
                 value = content,
-                onValueChange = { content = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("內容") },
-                placeholder = { Text("要快速貼上的文字") },
+                onValueChange = { content = it.take(PasteLogic.MAX_CONTENT_LENGTH) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester),
+                label = { Text(stringResource(R.string.field_content)) },
+                placeholder = { Text(stringResource(R.string.field_content_placeholder)) },
+                supportingText = {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = if (duplicate) stringResource(R.string.duplicate_hint) else "",
+                            color = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            stringResource(
+                                R.string.char_count,
+                                content.length,
+                                PasteLogic.MAX_CONTENT_LENGTH
+                            )
+                        )
+                    }
+                },
                 minLines = 2,
                 maxLines = 5
             )
             OutlinedTextField(
                 value = label,
-                onValueChange = { label = it },
+                onValueChange = { label = it.replace('\n', ' ').take(PasteLogic.MAX_LABEL_LENGTH) },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("標籤（選填）") },
-                placeholder = { Text("例如：工作、個人") },
+                label = { Text(stringResource(R.string.field_label)) },
+                placeholder = { Text(stringResource(R.string.field_label_placeholder)) },
                 singleLine = true
             )
             Spacer(modifier = Modifier.height(4.dp))
@@ -75,18 +108,21 @@ fun AddPasteSheet(
                 horizontalArrangement = Arrangement.End
             ) {
                 TextButton(onClick = onDismiss) {
-                    Text("取消")
+                    Text(stringResource(R.string.cancel))
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(
                     onClick = {
-                        if (content.isNotBlank()) {
-                            onAdd(content.trim(), label.trim())
+                        if (canSave) {
+                            onAdd(
+                                PasteLogic.normalizeContent(content),
+                                PasteLogic.normalizeLabel(label)
+                            )
                         }
                     },
-                    enabled = content.isNotBlank()
+                    enabled = canSave
                 ) {
-                    Text("新增")
+                    Text(stringResource(R.string.add_item))
                 }
             }
         }

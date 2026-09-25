@@ -2,7 +2,8 @@ package com.github.toober77.fastpaste.ui
 
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.content.Context
+import android.view.HapticFeedbackConstants
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,45 +35,82 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.github.toober77.fastpaste.PasteEvent
 import com.github.toober77.fastpaste.PasteViewModel
+import com.github.toober77.fastpaste.R
 import com.github.toober77.fastpaste.SortOrder
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PasteListScreen(viewModel: PasteViewModel = viewModel()) {
-    val items by viewModel.items.collectAsState()
-    val searchQuery by viewModel.searchQuery.collectAsState()
-    val sortOrder by viewModel.sortOrder.collectAsState()
+fun PasteListScreen(viewModel: PasteViewModel = viewModel(factory = PasteViewModel.Factory)) {
+    val items by viewModel.items.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val sortOrder by viewModel.sortOrder.collectAsStateWithLifecycle()
+    val selectedIds by viewModel.selectedIds.collectAsStateWithLifecycle()
 
-    var showAddSheet by remember { mutableStateOf(false) }
-    var selectedIds by remember { mutableStateOf(setOf<Int>()) }
+    var showAddSheet by rememberSaveable { mutableStateOf(false) }
 
     val context = LocalContext.current
+    val view = LocalView.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     val selectionMode = selectedIds.isNotEmpty()
+
+    val copiedMessage = stringResource(R.string.copied)
+    val undoLabel = stringResource(R.string.undo)
+
+    // Back in selection mode clears the selection instead of leaving the app.
+    BackHandler(enabled = selectionMode) { viewModel.clearSelection() }
+
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is PasteEvent.Deleted -> {
+                    // Each snackbar owns its own batch, so undo always restores the right items.
+                    snackbarHostState.currentSnackbarData?.dismiss()
+                    launch {
+                        val result = snackbarHostState.showSnackbar(
+                            message = context.getString(R.string.deleted_count, event.items.size),
+                            actionLabel = undoLabel,
+                            withDismissAction = true,
+                            duration = SnackbarDuration.Long
+                        )
+                        if (result == SnackbarResult.ActionPerformed) {
+                            viewModel.restore(event.items)
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -80,18 +118,21 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel()) {
         topBar = {
             if (selectionMode) {
                 TopAppBar(
-                    title = { Text("已選 ${selectedIds.size} 項") },
+                    title = { Text(stringResource(R.string.selected_count, selectedIds.size)) },
                     navigationIcon = {
-                        IconButton(onClick = { selectedIds = emptySet() }) {
-                            Icon(Icons.Default.Close, contentDescription = "取消選取")
+                        IconButton(onClick = { viewModel.clearSelection() }) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = stringResource(R.string.cancel_selection)
+                            )
                         }
                     },
                     actions = {
-                        IconButton(onClick = {
-                            viewModel.deleteItems(selectedIds.toList())
-                            selectedIds = emptySet()
-                        }) {
-                            Icon(Icons.Default.Delete, contentDescription = "刪除")
+                        IconButton(onClick = { viewModel.deleteSelected() }) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = stringResource(R.string.delete_selected)
+                            )
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -103,7 +144,7 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel()) {
                 )
             } else {
                 LargeTopAppBar(
-                    title = { Text("Fast Paste") },
+                    title = { Text(stringResource(R.string.app_name)) },
                     scrollBehavior = scrollBehavior,
                     colors = TopAppBarDefaults.largeTopAppBarColors(
                         containerColor = MaterialTheme.colorScheme.surface,
@@ -119,7 +160,7 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel()) {
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "新增")
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_item))
                 }
             }
         }
@@ -136,14 +177,17 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel()) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
-                placeholder = { Text("搜尋…") },
+                placeholder = { Text(stringResource(R.string.search_placeholder)) },
                 leadingIcon = {
                     Icon(Icons.Default.Search, contentDescription = null)
                 },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
                         IconButton(onClick = { viewModel.setSearchQuery("") }) {
-                            Icon(Icons.Default.Close, contentDescription = "清除")
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = stringResource(R.string.search_clear)
+                            )
                         }
                     }
                 },
@@ -167,17 +211,19 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel()) {
                 FilterChip(
                     selected = sortOrder == SortOrder.TIME,
                     onClick = { viewModel.setSortOrder(SortOrder.TIME) },
-                    label = { Text("時間") }
+                    label = { Text(stringResource(R.string.sort_by_time)) }
                 )
                 FilterChip(
                     selected = sortOrder == SortOrder.ALPHA,
                     onClick = { viewModel.setSortOrder(SortOrder.ALPHA) },
-                    label = { Text("A–Z") }
+                    label = { Text(stringResource(R.string.sort_by_alpha)) }
                 )
             }
 
+            val list = items
             when {
-                items.isEmpty() && searchQuery.isNotBlank() -> {
+                list == null -> Unit // Still loading; avoid flashing the empty state.
+                list.isEmpty() && searchQuery.isNotBlank() -> {
                     EmptyState(
                         icon = {
                             Icon(
@@ -187,11 +233,11 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel()) {
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
-                        title = "找不到相符項目",
-                        subtitle = "試試其他關鍵字"
+                        title = stringResource(R.string.no_results_title),
+                        subtitle = stringResource(R.string.no_results_subtitle)
                     )
                 }
-                items.isEmpty() -> {
+                list.isEmpty() -> {
                     EmptyState(
                         icon = {
                             Icon(
@@ -201,8 +247,8 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel()) {
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
-                        title = "尚未新增任何項目",
-                        subtitle = "點右下角＋開始建立快速貼上內容"
+                        title = stringResource(R.string.empty_title),
+                        subtitle = stringResource(R.string.empty_subtitle)
                     )
                 }
                 else -> {
@@ -215,31 +261,30 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel()) {
                         ),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        items(items, key = { it.id }) { item ->
-                            val isSelected = selectedIds.contains(item.id)
+                        items(list, key = { it.id }) { item ->
                             PasteCard(
                                 item = item,
-                                isSelected = isSelected,
+                                isSelected = item.id in selectedIds,
+                                selectionMode = selectionMode,
                                 onClick = {
                                     if (selectionMode) {
-                                        selectedIds = if (isSelected) {
-                                            selectedIds - item.id
-                                        } else {
-                                            selectedIds + item.id
-                                        }
+                                        viewModel.toggleSelection(item.id)
                                     } else {
-                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
-                                            as ClipboardManager
+                                        val clipboard = context.getSystemService(ClipboardManager::class.java)
                                         clipboard.setPrimaryClip(
-                                            ClipData.newPlainText("Paste", item.content)
+                                            ClipData.newPlainText(item.label.ifEmpty { "Paste" }, item.content)
                                         )
+                                        view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
                                         scope.launch {
-                                            snackbarHostState.showSnackbar("已複製")
+                                            // Replace instead of queueing one snackbar per tap.
+                                            snackbarHostState.currentSnackbarData?.dismiss()
+                                            snackbarHostState.showSnackbar(copiedMessage)
                                         }
                                     }
                                 },
                                 onLongClick = {
-                                    selectedIds = selectedIds + item.id
+                                    view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                    viewModel.select(item.id)
                                 }
                             )
                         }
@@ -255,7 +300,8 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel()) {
             onAdd = { content, label ->
                 viewModel.addItem(content, label)
                 showAddSheet = false
-            }
+            },
+            isDuplicate = viewModel::isDuplicate
         )
     }
 }

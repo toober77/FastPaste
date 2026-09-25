@@ -2,8 +2,8 @@ package com.github.toober77.fastpaste
 
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.content.Context
 import android.os.Bundle
+import android.view.HapticFeedbackConstants
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -32,8 +32,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -50,20 +52,25 @@ class QuickPasteDialogActivity : ComponentActivity() {
 
         setContent {
             FastPasteTheme {
+                val copyLabel = stringResource(R.string.action_copy)
                 AlertDialog(
                     onDismissRequest = { finish() },
                     title = {
                         Text(
-                            text = "快速貼上",
+                            text = stringResource(R.string.quick_paste_title),
                             style = MaterialTheme.typography.headlineSmall
                         )
                     },
                     text = {
-                        val itemsState by pasteDao.getAllItemsSortedByTime()
-                            .collectAsState(initial = emptyList())
-                        val recentItems = itemsState.take(5)
+                        // remember the Flow so recomposition doesn't restart the query.
+                        val recentFlow = remember { pasteDao.getRecentItems(RECENT_LIMIT) }
+                        val recentItems by recentFlow.collectAsState(initial = null)
+                        val list = recentItems
 
-                        if (recentItems.isEmpty()) {
+                        if (list == null) {
+                            // Loading: keep layout stable without flashing the empty message.
+                            Spacer(modifier = Modifier.height(48.dp))
+                        } else if (list.isEmpty()) {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -78,7 +85,7 @@ class QuickPasteDialogActivity : ComponentActivity() {
                                 )
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Text(
-                                    text = "目前沒有快速貼上項目",
+                                    text = stringResource(R.string.quick_paste_empty),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = TextAlign.Center
@@ -89,12 +96,13 @@ class QuickPasteDialogActivity : ComponentActivity() {
                                 modifier = Modifier.heightIn(max = 360.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                items(recentItems, key = { it.id }) { item ->
+                                items(list, key = { it.id }) { item ->
                                     Card(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clickable {
-                                                copyToClipboard(item.content)
+                                            .heightIn(min = 48.dp)
+                                            .clickable(onClickLabel = copyLabel) {
+                                                copyToClipboard(item)
                                                 finish()
                                             },
                                         shape = MaterialTheme.shapes.large,
@@ -130,7 +138,7 @@ class QuickPasteDialogActivity : ComponentActivity() {
                                             }
                                             Icon(
                                                 imageVector = Icons.Outlined.ContentCopy,
-                                                contentDescription = "複製",
+                                                contentDescription = null,
                                                 modifier = Modifier.size(20.dp),
                                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -141,16 +149,21 @@ class QuickPasteDialogActivity : ComponentActivity() {
                         }
                     },
                     confirmButton = {
-                        TextButton(onClick = { finish() }) { Text("關閉") }
+                        TextButton(onClick = { finish() }) { Text(stringResource(R.string.close)) }
                     }
                 )
             }
         }
     }
 
-    private fun copyToClipboard(text: String) {
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("Paste", text))
-        Toast.makeText(this, "已複製", Toast.LENGTH_SHORT).show()
+    private fun copyToClipboard(item: PasteItem) {
+        val clipboard = getSystemService(ClipboardManager::class.java)
+        clipboard.setPrimaryClip(ClipData.newPlainText(item.label.ifEmpty { "Paste" }, item.content))
+        window.decorView.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+        Toast.makeText(this, R.string.copied, Toast.LENGTH_SHORT).show()
+    }
+
+    private companion object {
+        const val RECENT_LIMIT = 5
     }
 }
