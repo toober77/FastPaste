@@ -13,6 +13,15 @@ interface PasteDao {
     @Query("SELECT * FROM paste_items ORDER BY pinned DESC, content COLLATE NOCASE ASC")
     fun getAllItemsSortedByAlpha(): Flow<List<PasteItem>>
 
+    @Query("SELECT * FROM paste_items ORDER BY pinned DESC, position ASC, createdAt DESC")
+    fun getAllItemsSortedByPosition(): Flow<List<PasteItem>>
+
+    @Query("SELECT COALESCE(MIN(position), 0) FROM paste_items")
+    suspend fun minPosition(): Int
+
+    @Update(entity = PasteItem::class)
+    suspend fun updatePositions(positions: List<PositionUpdate>)
+
     @Query("SELECT * FROM paste_items ORDER BY pinned DESC, createdAt DESC LIMIT :limit")
     fun getRecentItems(limit: Int): Flow<List<PasteItem>>
 

@@ -42,7 +42,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -81,7 +80,18 @@ import com.github.toober77.fastpaste.PasteEvent
 import com.github.toober77.fastpaste.PasteViewModel
 import com.github.toober77.fastpaste.R
 import com.github.toober77.fastpaste.SortOrder
+import com.github.toober77.fastpaste.PasteItem
+import com.github.toober77.fastpaste.PasteLogic
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.filled.DragIndicator
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import kotlinx.coroutines.launch
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,7 +112,10 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel(factory = PasteViewMod
     val view = LocalView.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+    // Fixed-height bar: the old LargeTopAppBar + exitUntilCollapsed only collapsed when the list
+    // could scroll, so its empty expanded area ("space above the title") came and went depending
+    // on list length, filters and selection mode. Pinned behaviour only tints the bar on scroll.
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarState())
     val selectionMode = selectedIds.isNotEmpty()
 
     val copiedMessage = stringResource(R.string.copied)
@@ -211,7 +224,7 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel(factory = PasteViewMod
                     )
                 )
             } else {
-                LargeTopAppBar(
+                TopAppBar(
                     title = { Text(stringResource(R.string.app_name)) },
                     scrollBehavior = scrollBehavior,
                     actions = {
@@ -248,7 +261,7 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel(factory = PasteViewMod
                             }
                         }
                     },
-                    colors = TopAppBarDefaults.largeTopAppBarColors(
+                    colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.surface,
                         scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer
                     )
@@ -310,18 +323,34 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel(factory = PasteViewMod
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                // In custom mode the automatic sorts are shown greyed out (still tappable).
+                val autoSortColors = if (sortOrder == SortOrder.CUSTOM) {
+                    FilterChipDefaults.filterChipColors(
+                        labelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    )
+                } else {
+                    FilterChipDefaults.filterChipColors()
+                }
                 FilterChip(
                     selected = sortOrder == SortOrder.TIME,
                     onClick = { viewModel.setSortOrder(SortOrder.TIME) },
-                    label = { Text(stringResource(R.string.sort_by_time)) }
+                    label = { Text(stringResource(R.string.sort_by_time)) },
+                    colors = autoSortColors
                 )
                 FilterChip(
                     selected = sortOrder == SortOrder.ALPHA,
                     onClick = { viewModel.setSortOrder(SortOrder.ALPHA) },
-                    label = { Text(stringResource(R.string.sort_by_alpha)) }
+                    label = { Text(stringResource(R.string.sort_by_alpha)) },
+                    colors = autoSortColors
+                )
+                FilterChip(
+                    selected = sortOrder == SortOrder.CUSTOM,
+                    onClick = { viewModel.setSortOrder(SortOrder.CUSTOM) },
+                    label = { Text(stringResource(R.string.sort_custom)) }
                 )
                 FilterChip(
                     selected = favoritesOnly,
@@ -383,7 +412,26 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel(factory = PasteViewMod
                     )
                 }
                 else -> {
+                    // Drag to reorder only on the full list: with a search/favorites filter the
+                    // position of hidden items would be ambiguous.
+                    val reorderEnabled = !selectionMode && searchQuery.isBlank() && !favoritesOnly
+                    val latestList by rememberUpdatedState(list)
+                    // Order shown while dragging; cleared once the DB emits the saved order.
+                    var dragOrder by remember { mutableStateOf<List<PasteItem>?>(null) }
+                    var isDragging by remember { mutableStateOf(false) }
+                    LaunchedEffect(list) { if (!isDragging) dragOrder = null }
+                    val shown = dragOrder ?: list
+                    val lazyListState = rememberLazyListState()
+                    val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
+                        val current = dragOrder ?: latestList
+                        PasteLogic.move(current, from.key as Int, to.key as Int)?.let {
+                            dragOrder = it
+                            view.performHapticFeedback(HapticFeedbackConstants.SEGMENT_FREQUENT_TICK)
+                        }
+                    }
+                    val dragLabel = stringResource(R.string.drag_to_reorder)
                     LazyColumn(
+                        state = lazyListState,
                         contentPadding = PaddingValues(
                             start = 16.dp,
                             end = 16.dp,
@@ -392,11 +440,47 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel(factory = PasteViewMod
                         ),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        items(list, key = { it.id }) { item ->
+                        items(shown, key = { it.id }) { item ->
+                            ReorderableItem(reorderState, key = item.id) { dragging ->
                             PasteCard(
                                 item = item,
                                 isSelected = item.id in selectedIds,
                                 selectionMode = selectionMode,
+                                dragging = dragging,
+                                dragHandle = if (!reorderEnabled) null else {
+                                    {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(width = 40.dp, height = 48.dp)
+                                                .draggableHandle(
+                                                    onDragStarted = {
+                                                        isDragging = true
+                                                        view.performHapticFeedback(HapticFeedbackConstants.GESTURE_START)
+                                                    },
+                                                    onDragStopped = {
+                                                        isDragging = false
+                                                        val ordered = dragOrder
+                                                        if (ordered != null &&
+                                                            ordered.map { it.id } != latestList.map { it.id }
+                                                        ) {
+                                                            viewModel.applyCustomOrder(ordered.map { it.id })
+                                                        } else {
+                                                            dragOrder = null
+                                                        }
+                                                        view.performHapticFeedback(HapticFeedbackConstants.GESTURE_END)
+                                                    }
+                                                )
+                                                .semantics { contentDescription = dragLabel },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                Icons.Default.DragIndicator,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                },
                                 onClick = {
                                     if (selectionMode) {
                                         viewModel.toggleSelection(item.id)
@@ -425,6 +509,7 @@ fun PasteListScreen(viewModel: PasteViewModel = viewModel(factory = PasteViewMod
                                 onToggleFavorite = { viewModel.toggleFavorite(item) },
                                 onDelete = { viewModel.deleteItem(item.id) }
                             )
+                            }
                         }
                     }
                 }

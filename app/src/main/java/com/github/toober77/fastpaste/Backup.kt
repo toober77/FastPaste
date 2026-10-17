@@ -21,7 +21,9 @@ data class BackupItem(
     @SerialName("createdAt") val createdAt: Long = 0L,
     @SerialName("updatedAt") val updatedAt: Long = 0L,
     @SerialName("pinned") val pinned: Boolean = false,
-    @SerialName("favorite") val favorite: Boolean = false
+    @SerialName("favorite") val favorite: Boolean = false,
+    /** Custom order (added in v1.1); optional so older backups still import. */
+    @SerialName("position") val position: Int? = null
 )
 
 class BackupFormatException(val reason: Reason, cause: Throwable? = null) :
@@ -55,7 +57,8 @@ object Backup {
                         createdAt = it.createdAt,
                         updatedAt = it.updatedAt,
                         pinned = it.pinned,
-                        favorite = it.favorite
+                        favorite = it.favorite,
+                        position = it.position
                     )
                 }
             )
@@ -85,12 +88,13 @@ object Backup {
     fun merge(
         existing: List<PasteItem>,
         incoming: List<BackupItem>,
-        now: Long = System.currentTimeMillis()
+        now: Long = System.currentTimeMillis(),
+        existingMinPosition: Int = 0
     ): MergeResult {
         val seen = existing.mapTo(HashSet()) {
             PasteLogic.normalizeContent(it.content) to PasteLogic.normalizeLabel(it.label)
         }
-        val toInsert = ArrayList<PasteItem>()
+        val toInsert = ArrayList<Pair<PasteItem, Int?>>()
         var skipped = 0
         for (b in incoming) {
             val content = PasteLogic.normalizeContent(b.content)
@@ -107,9 +111,16 @@ object Backup {
                 updatedAt = if (b.updatedAt >= created) b.updatedAt else created,
                 pinned = b.pinned,
                 favorite = b.favorite
-            )
+            ) to b.position
         }
-        return MergeResult(toInsert, skipped)
+        // Imported rows go above the existing custom order, keeping the file's relative order
+        // (stable sort: items without a position, i.e. older backups, keep file order after).
+        val ranked = toInsert.sortedWith(
+            compareBy<Pair<PasteItem, Int?>> { it.second == null }.thenBy { it.second ?: 0 }
+        )
+        val base = existingMinPosition - ranked.size
+        val withPositions = ranked.mapIndexed { i, (item, _) -> item.copy(position = base + i) }
+        return MergeResult(withPositions, skipped)
     }
 
     fun defaultFileName(date: java.time.LocalDate = java.time.LocalDate.now()): String =

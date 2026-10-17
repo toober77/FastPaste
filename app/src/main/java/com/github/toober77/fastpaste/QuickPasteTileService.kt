@@ -2,10 +2,20 @@ package com.github.toober77.fastpaste
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.graphics.drawable.Icon
 import android.os.Build
 import android.service.quicksettings.TileService
 
 class QuickPasteTileService : TileService() {
+    override fun onStartListening() {
+        super.onStartListening()
+        // Manifest icon is the default; set it explicitly so OEM shades don't fall back to the launcher icon.
+        qsTile?.apply {
+            icon = Icon.createWithResource(this@QuickPasteTileService, R.drawable.ic_tile_fastpaste)
+            updateTile()
+        }
+    }
+
     override fun onClick() {
         super.onClick()
         

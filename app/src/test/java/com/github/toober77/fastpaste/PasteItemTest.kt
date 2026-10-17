@@ -21,9 +21,10 @@ class PasteItemTest {
     }
 
     @Test
-    fun sortOrder_enumHasTimeAndAlpha() {
-        assertEquals(2, SortOrder.entries.size)
+    fun sortOrder_enumHasTimeAlphaCustom() {
+        assertEquals(3, SortOrder.entries.size)
         assertEquals(SortOrder.TIME, SortOrder.valueOf("TIME"))
         assertEquals(SortOrder.ALPHA, SortOrder.valueOf("ALPHA"))
+        assertEquals(SortOrder.CUSTOM, SortOrder.valueOf("CUSTOM"))
     }
 }

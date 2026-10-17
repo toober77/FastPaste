@@ -23,6 +23,20 @@ class FakePasteDao(initial: List<PasteItem> = emptyList()) : PasteDao {
         return state.map { list -> list.sortedWith(PINNED_FIRST.thenBy(String.CASE_INSENSITIVE_ORDER) { it.content }) }
     }
 
+    var positionQueries = 0
+
+    override fun getAllItemsSortedByPosition(): Flow<List<PasteItem>> {
+        positionQueries++
+        return state.map { list -> PasteLogic.sort(list, SortOrder.CUSTOM) }
+    }
+
+    override suspend fun minPosition(): Int = state.value.minOfOrNull { it.position } ?: 0
+
+    override suspend fun updatePositions(positions: List<PositionUpdate>) {
+        val byId = positions.associate { it.id to it.position }
+        state.value = state.value.map { item -> byId[item.id]?.let { item.copy(position = it) } ?: item }
+    }
+
     override fun getRecentItems(limit: Int): Flow<List<PasteItem>> =
         state.map { list -> list.sortedWith(PINNED_FIRST.thenByDescending { it.createdAt }).take(limit) }
 

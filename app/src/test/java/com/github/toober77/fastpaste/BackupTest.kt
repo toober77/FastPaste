@@ -31,7 +31,7 @@ class BackupTest {
         val root = Json.parseToJsonElement(text).jsonObject
         assertEquals(1, root["version"]!!.jsonPrimitive.int)
         val item = root["items"]!!.jsonArray.single().jsonObject
-        assertEquals(setOf("content", "label", "createdAt", "updatedAt", "pinned", "favorite"), item.keys)
+        assertEquals(setOf("content", "label", "createdAt", "updatedAt", "pinned", "favorite", "position"), item.keys)
         assertEquals("true", item["pinned"]!!.jsonPrimitive.content)
     }
 
@@ -43,7 +43,7 @@ class BackupTest {
         )
         val decoded = Backup.decode(Backup.encode(items))
         assertEquals(
-            items.map { BackupItem(it.content, it.label, it.createdAt, it.updatedAt, it.pinned, it.favorite) },
+            items.map { BackupItem(it.content, it.label, it.createdAt, it.updatedAt, it.pinned, it.favorite, it.position) },
             decoded.items
         )
     }
@@ -109,5 +109,25 @@ class BackupTest {
     @Test
     fun defaultFileName_usesDate() {
         assertEquals("fastpaste-backup-20260925.json", Backup.defaultFileName(LocalDate.of(2026, 9, 25)))
+    }
+
+    @Test
+    fun position_roundTrips_andIsOptional() {
+        val text = Backup.encode(listOf(PasteItem(content = "x", position = 7)), exportedAt = 1)
+        assertEquals(7, Backup.decode(text).items.single().position)
+        val old = Backup.decode("""{"version":1,"items":[{"content":"y"}]}""")
+        assertEquals(null, old.items.single().position)
+    }
+
+    @Test
+    fun merge_placesImportsAboveExisting_inBackupPositionOrder() {
+        val incoming = listOf(
+            BackupItem("legacy"),
+            BackupItem("second", position = 1),
+            BackupItem("first", position = 0)
+        )
+        val result = Backup.merge(emptyList(), incoming, now = 500, existingMinPosition = -2)
+        assertEquals(listOf("first", "second", "legacy"), result.toInsert.map { it.content })
+        assertEquals(listOf(-5, -4, -3), result.toInsert.map { it.position })
     }
 }

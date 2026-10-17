@@ -5,7 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [PasteItem::class], version = 2, exportSchema = true)
+@Database(entities = [PasteItem::class], version = 3, exportSchema = true)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun pasteDao(): PasteDao
 

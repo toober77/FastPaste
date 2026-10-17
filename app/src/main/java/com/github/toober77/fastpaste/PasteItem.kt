@@ -14,5 +14,10 @@ data class PasteItem(
     @ColumnInfo(defaultValue = "0") val pinned: Boolean = false,
     @ColumnInfo(defaultValue = "0") val favorite: Boolean = false,
     /** Last content/label edit; equals createdAt until the snippet is edited. */
-    @ColumnInfo(defaultValue = "0") val updatedAt: Long = createdAt
+    @ColumnInfo(defaultValue = "0") val updatedAt: Long = createdAt,
+    /** Custom (drag) order within the pinned / unpinned group; lower = higher up. */
+    @ColumnInfo(defaultValue = "0") val position: Int = 0
 )
+
+/** Partial entity used to persist a drag-reordered list in one @Update transaction. */
+data class PositionUpdate(val id: Int, val position: Int)

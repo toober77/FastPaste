@@ -28,7 +28,7 @@ import java.io.InputStream
 import java.io.OutputStream
 
 enum class SortOrder {
-    TIME, ALPHA
+    TIME, ALPHA, CUSTOM
 }
 
 enum class BackupError { READ, WRITE, INVALID, UNSUPPORTED_VERSION, TOO_LARGE }
@@ -48,10 +48,12 @@ class PasteViewModel(
     private val dao: PasteDao,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val clock: () -> Long = System::currentTimeMillis,
-    private val onDataChanged: () -> Unit = {}
+    private val onDataChanged: () -> Unit = {},
+    initialSortOrder: SortOrder = SortOrder.TIME,
+    private val onSortOrderChanged: (SortOrder) -> Unit = {}
 ) : ViewModel() {
 
-    private val _sortOrder = MutableStateFlow(SortOrder.TIME)
+    private val _sortOrder = MutableStateFlow(initialSortOrder)
     val sortOrder: StateFlow<SortOrder> = _sortOrder.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
@@ -70,8 +72,11 @@ class PasteViewModel(
     @OptIn(ExperimentalCoroutinesApi::class)
     private val allItems: StateFlow<List<PasteItem>?> = _sortOrder
         .flatMapLatest { order ->
-            if (order == SortOrder.TIME) dao.getAllItemsSortedByTime()
-            else dao.getAllItemsSortedByAlpha()
+            when (order) {
+                SortOrder.TIME -> dao.getAllItemsSortedByTime()
+                SortOrder.ALPHA -> dao.getAllItemsSortedByAlpha()
+                SortOrder.CUSTOM -> dao.getAllItemsSortedByPosition()
+            }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
@@ -105,7 +110,10 @@ class PasteViewModel(
         val l = PasteLogic.normalizeLabel(label)
         viewModelScope.launch {
             val now = clock()
-            dao.insert(PasteItem(content = c, label = l, createdAt = now, updatedAt = now))
+            // New snippets go to the top of the custom order.
+            dao.insert(
+                PasteItem(content = c, label = l, createdAt = now, updatedAt = now, position = dao.minPosition() - 1)
+            )
             onDataChanged()
         }
     }
@@ -196,7 +204,23 @@ class PasteViewModel(
     }
 
     fun setSortOrder(order: SortOrder) {
+        if (_sortOrder.value == order) return
         _sortOrder.value = order
+        onSortOrderChanged(order)
+    }
+
+    /**
+     * Saves a drag-reordered list ([orderedIds] = the full displayed order) as the custom order
+     * and switches to 「自訂」. Reordering is only offered on the unfiltered list, so every item
+     * gets a position.
+     */
+    fun applyCustomOrder(orderedIds: List<Int>) {
+        if (orderedIds.isEmpty()) return
+        setSortOrder(SortOrder.CUSTOM)
+        viewModelScope.launch {
+            dao.updatePositions(PasteLogic.positionsFor(orderedIds))
+            onDataChanged()
+        }
     }
 
     fun setSearchQuery(query: String) {
@@ -238,7 +262,7 @@ class PasteViewModel(
                     val input = openInput() ?: throw IOException("No input stream")
                     Backup.decode(input.use { readCapped(it, Backup.MAX_BYTES) })
                 }
-                val merge = Backup.merge(dao.getAllOnce(), file.items, clock())
+                val merge = Backup.merge(dao.getAllOnce(), file.items, clock(), dao.minPosition())
                 if (merge.toInsert.isNotEmpty()) {
                     dao.insertAll(merge.toInsert)
                     onDataChanged()
@@ -283,9 +307,15 @@ class PasteViewModel(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = checkNotNull(this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY])
-                PasteViewModel(AppDatabase.getDatabase(app).pasteDao()) {
-                    PasteWidgetUpdater.requestUpdate(app)
-                }
+                PasteViewModel(
+                    dao = AppDatabase.getDatabase(app).pasteDao(),
+                    onDataChanged = { PasteWidgetUpdater.requestUpdate(app) },
+                    initialSortOrder = SortPrefs.load(app),
+                    onSortOrderChanged = {
+                        SortPrefs.save(app, it)
+                        PasteWidgetUpdater.requestUpdate(app)
+                    }
+                )
             }
         }
     }

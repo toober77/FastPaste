@@ -6,6 +6,8 @@
     <string name="search_clear">清除搜尋</string>
     <string name="sort_by_time">時間</string>
     <string name="sort_by_alpha">A–Z</string>
+    <string name="sort_custom">自訂</string>
+    <string name="drag_to_reorder">拖曳以調整順序</string>
     <string name="add_item">新增</string>
     <string name="selected_count">已選 %1$d 項</string>
     <string name="cancel_selection">取消選取</string>
@@ -70,6 +72,7 @@
     <string name="close">關閉</string>
 
     <!-- Widget -->
+    <string name="widget_description">快速複製常用片段</string>
     <string name="widget_empty">尚無項目，開啟 App 新增</string>
     <string name="widget_copied">已從小工具複製</string>
     <string name="widget_pinned_prefix">📌 %1$s</string>

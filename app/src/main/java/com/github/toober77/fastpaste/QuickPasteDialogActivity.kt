@@ -41,6 +41,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.github.toober77.fastpaste.ui.theme.FastPasteTheme
+import kotlinx.coroutines.flow.map
 
 class QuickPasteDialogActivity : ComponentActivity() {
 
@@ -64,7 +65,10 @@ class QuickPasteDialogActivity : ComponentActivity() {
                     },
                     text = {
                         // remember the Flow so recomposition doesn't restart the query.
-                        val recentFlow = remember { pasteDao.getRecentItems(RECENT_LIMIT) }
+                        val recentFlow = remember {
+                            val order = SortPrefs.load(applicationContext)
+                            pasteDao.getAllItemsSortedByTime().map { PasteLogic.sort(it, order).take(RECENT_LIMIT) }
+                        }
                         val recentItems by recentFlow.collectAsState(initial = null)
                         val list = recentItems
 

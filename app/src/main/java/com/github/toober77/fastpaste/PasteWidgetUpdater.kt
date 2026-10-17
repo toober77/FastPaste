@@ -42,7 +42,11 @@ object PasteWidgetUpdater {
     suspend fun update(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
         if (appWidgetIds.isEmpty()) return
         val appContext = context.applicationContext
-        val items = AppDatabase.getDatabase(appContext).pasteDao().getRecentItemsOnce(MAX_ITEMS)
+        // Same order as the app's current sort mode.
+        val items = PasteLogic.sort(
+            AppDatabase.getDatabase(appContext).pasteDao().getAllOnce(),
+            SortPrefs.load(appContext)
+        ).take(MAX_ITEMS)
         for (id in appWidgetIds) {
             manager.updateAppWidget(id, buildViews(appContext, items))
         }

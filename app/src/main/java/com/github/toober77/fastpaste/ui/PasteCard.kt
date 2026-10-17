@@ -56,7 +56,10 @@ fun PasteCard(
     onTogglePin: () -> Unit,
     onToggleFavorite: () -> Unit,
     onDelete: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Drag handle shown at the start of the card when reordering is available. */
+    dragHandle: (@Composable () -> Unit)? = null,
+    dragging: Boolean = false
 ) {
     val clickLabel = when {
         !selectionMode -> stringResource(R.string.action_copy)
@@ -94,16 +97,21 @@ fun PasteCard(
             }
         ),
         elevation = CardDefaults.cardElevation(
-            defaultElevation = if (isSelected) 0.dp else 1.dp
+            defaultElevation = when {
+                dragging -> 8.dp
+                isSelected -> 0.dp
+                else -> 1.dp
+            }
         )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+                .padding(start = if (dragHandle != null) 0.dp else 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            dragHandle?.invoke()
             Column(
                 modifier = Modifier
                     .weight(1f)

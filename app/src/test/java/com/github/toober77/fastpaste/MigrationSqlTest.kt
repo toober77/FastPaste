@@ -69,6 +69,7 @@ class MigrationSqlTest {
     fun schemaFiles_haveExpectedVersions() {
         assertEquals("1", schema(1)["version"]!!.jsonPrimitive.content)
         assertEquals("2", schema(2)["version"]!!.jsonPrimitive.content)
+        assertEquals("3", schema(3)["version"]!!.jsonPrimitive.content)
     }
 
     @Test
@@ -97,5 +98,26 @@ class MigrationSqlTest {
             ),
             rows
         )
+    }
+
+    @Test
+    fun migration2to3_producesExactV3Columns() {
+        Migrations.MIGRATION_1_2_SQL.forEach(::exec)
+        Migrations.MIGRATION_2_3_SQL.forEach(::exec)
+        assertEquals(expectedColumns(3), actualColumns())
+    }
+
+    @Test
+    fun migration2to3_keepsRows_andRanksNewestFirst() {
+        Migrations.MIGRATION_1_2_SQL.forEach(::exec)
+        exec("INSERT INTO paste_items (id, content, label, createdAt) VALUES (3, 'tie', '', 222)")
+        Migrations.MIGRATION_2_3_SQL.forEach(::exec)
+        val rows = conn.createStatement().use { st ->
+            st.executeQuery("SELECT id, content, position FROM paste_items ORDER BY id").use { rs ->
+                buildList { while (rs.next()) add(Triple(rs.getInt(1), rs.getString(2), rs.getInt(3))) }
+            }
+        }
+        // createdAt 222 tie broken by higher id first.
+        assertEquals(listOf(Triple(1, "hello", 2), Triple(2, "世界", 1), Triple(3, "tie", 0)), rows)
     }
 }

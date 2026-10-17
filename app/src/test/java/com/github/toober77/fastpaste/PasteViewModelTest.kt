@@ -264,4 +264,31 @@ class PasteViewModelTest {
         assertEquals(3, dao.state.value.size)
         assertEquals(0, changes)
     }
+
+    @Test
+    fun applyCustomOrder_savesPositions_andSwitchesToCustom() = runTest(dispatcher) {
+        val saved = mutableListOf<SortOrder>()
+        val vm = PasteViewModel(dao, ioDispatcher = dispatcher, clock = { NOW }, onSortOrderChanged = { saved += it })
+        backgroundScope.launch(dispatcher) { vm.items.collect {} }
+        vm.applyCustomOrder(listOf(3, 1, 2))
+        assertEquals(SortOrder.CUSTOM, vm.sortOrder.value)
+        assertEquals(listOf(SortOrder.CUSTOM), saved)
+        assertEquals(listOf(3, 1, 2), vm.items.value!!.map { it.id })
+        // Back to time and then custom again: the custom order is remembered.
+        vm.setSortOrder(SortOrder.TIME)
+        assertEquals(listOf(2, 3, 1), vm.items.value!!.map { it.id })
+        vm.setSortOrder(SortOrder.CUSTOM)
+        assertEquals(listOf(3, 1, 2), vm.items.value!!.map { it.id })
+        assertEquals(listOf(SortOrder.CUSTOM, SortOrder.TIME, SortOrder.CUSTOM), saved)
+    }
+
+    @Test
+    fun initialSortOrder_isUsed_andNewItemsGoToTopOfCustomOrder() = runTest(dispatcher) {
+        val vm = PasteViewModel(dao, ioDispatcher = dispatcher, clock = { NOW }, initialSortOrder = SortOrder.CUSTOM)
+        backgroundScope.launch(dispatcher) { vm.items.collect {} }
+        vm.applyCustomOrder(listOf(1, 2, 3))
+        vm.addItem("fresh")
+        assertEquals("fresh", vm.items.value!!.first().content)
+        assertEquals(1, dao.positionQueries)
+    }
 }
